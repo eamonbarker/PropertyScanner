@@ -25,24 +25,122 @@
                 top: 0;
                 left: 0;
                 width: 100%;
-                background-color: #fff;
+                background-color: rgba(255, 255, 255, 0.95);
                 border-bottom: 1px solid #e5e7eb;
-                z-index: 1000;
-                padding: 0.5rem 1rem;
+                z-index: 999;
+                padding: 0.25rem 0.5rem;
                 box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+                font-size: 0.85rem;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                height: 32px;
+            }
+            #loading-bar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                background-color: rgba(255, 255, 255, 0.95);
+                border-bottom: 1px solid #e5e7eb;
+                z-index: 999;
+                padding: 0.25rem 0.5rem;
+                box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+                font-size: 0.85rem;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                height: 32px;
+            }
+            #loading-bar .spinner {
+                display: inline-block;
+                width: 16px;
+                height: 16px;
+                border: 2px solid rgba(59, 130, 246, 0.3);
+                border-radius: 50%;
+                border-top-color: #3b82f6;
+                animation: spin 1s linear infinite;
+                margin-right: 10px;
+            }
+            @keyframes spin {
+                to { transform: rotate(360deg); }
+            }
+            #property-insights-bar .metrics-container {
+                display: flex;
+                align-items: center;
+                flex-grow: 1;
+                overflow-x: auto;
+                white-space: nowrap;
+                padding-right: 10px;
+            }
+            #property-insights-bar .metric {
+                display: inline-flex;
+                align-items: center;
+                margin-right: 12px;
+                padding: 2px 6px;
+                border-radius: 4px;
+                background-color: rgba(240, 249, 255, 0.7);
+            }
+            #property-insights-bar .metric-label {
+                font-weight: 600;
+                margin-right: 5px;
+                color: #374151;
+                font-size: 0.75rem;
+            }
+            #property-insights-bar .metric-value {
+                font-weight: 500;
+                color: #1f2937;
+                font-size: 0.75rem;
+            }
+            #property-insights-bar .positive {
+                color: #16a34a;
+            }
+            #property-insights-bar .negative {
+                color: #dc2626;
+            }
+            #property-insights-bar .controls {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            }
+            #property-insights-bar button {
+                padding: 2px 8px;
+                font-size: 0.7rem;
+                height: 24px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background-color: #f3f4f6;
+                color: #4b5563;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            }
+            #property-insights-bar button:hover {
+                background-color: #e5e7eb;
+            }
+            #property-insights-bar #toggleButton {
+                background-color: #3b82f6;
+                color: white;
+            }
+            #property-insights-bar #toggleButton:hover {
+                background-color: #2563eb;
             }
             #property-insights {
                 font-family: 'Arial', sans-serif;
                 transition: all 0.3s ease;
                 position: fixed;
-                top: 48px; /* Adjust based on bar height */
+                top: 32px; /* Adjusted to match bar height */
                 left: 0;
                 width: 100%;
                 background-color: #fff;
                 border-bottom: 1px solid #e5e7eb;
-                z-index: 999;
+                z-index: 998;
                 max-height: 80vh;
                 overflow-y: auto;
+                padding: 1rem;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             }
             #property-insights button, #property-insights select, #property-insights input {
                 transition: all 0.3s ease;
@@ -198,13 +296,86 @@
     `;
     document.head.insertAdjacentHTML('beforeend', styles);
 
-    // Function to extract address from realestate.com.au page
+    // Create loading indicator immediately
+    let loadingBar = document.createElement('div');
+    loadingBar.id = 'loading-bar';
+    loadingBar.innerHTML = `<div style="display: flex; align-items: center;">
+        <div class="spinner"></div>
+        <span>Loading property insights...</span>
+    </div>`;
+    
+    // Function to add loading bar immediately
+    function addLoadingBar() {
+        if (document.body) {
+            document.body.insertBefore(loadingBar, document.body.firstChild);
+            // Instead of adding padding to body, add padding to the first content element
+            adjustPageLayout();
+        } else {
+            // If body isn't ready yet, try again
+            setTimeout(addLoadingBar, 50);
+        }
+    }
+    
+    // More precise layout adjustment
+    function adjustPageLayout() {
+        // Find main navigation or header element to adjust
+        const nav = document.querySelector('nav, header, .header, [class*="navigation"], [class*="nav-"]');
+        if (nav) {
+            // Add margin to the navigation instead of body padding
+            const currentMargin = parseInt(window.getComputedStyle(nav).marginTop || '0');
+            nav.style.marginTop = (currentMargin + 32) + 'px';
+        } else {
+            // Fallback to body padding but with a more precise calculation
+            const firstElement = document.body.firstElementChild;
+            if (firstElement && firstElement !== loadingBar && firstElement.id !== 'property-insights-bar') {
+                const currentMargin = parseInt(window.getComputedStyle(firstElement).marginTop || '0');
+                firstElement.style.marginTop = (currentMargin + 32) + 'px';
+            }
+        }
+    }
+    
+    // Call immediately
+    addLoadingBar();
+
+    // Improved performance: Use cached DOM queries and prevent layout thrashing
+    let cache = {};
+    
+    // Performance optimization: Debounce expensive operations
+    function debounce(func, wait) {
+        let timeout;
+        return function() {
+            const context = this, args = arguments;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), wait);
+        };
+    }
+    
+    // Performance optimization: Use requestAnimationFrame for smooth UI updates
+    function rafThrottle(callback) {
+        let queued = false;
+        return function() {
+            if (!queued) {
+                queued = true;
+                requestAnimationFrame(() => {
+                    callback();
+                    queued = false;
+                });
+            }
+        };
+    }
+    
+    // Function to extract address from realestate.com.au page - Optimized
     function getAddress() {
         console.log('Attempting to extract address...');
-        let addressElement = document.querySelector('h1, [data-testid="listing-details__listing-summary"], .listing-details__address, .address');
+        if (cache.address) return cache.address;
+        
+        let selectors = 'h1, [data-testid="listing-details__listing-summary"], .listing-details__address, .address';
+        let addressElement = document.querySelector(selectors);
         let address = addressElement ? addressElement.textContent.trim() : null;
+        
         if (address) {
             console.log('Address found: ', address);
+            cache.address = address; // Cache for future use
         } else {
             console.error('Address not found on page');
         }
@@ -747,6 +918,12 @@
     // Function to display data with modern UI
     function displayData(originalPrice, originalRental, address) {
         console.log('Displaying data - Price: ', originalPrice, 'Rental: ', originalRental);
+        
+        // Remove loading bar
+        if (loadingBar && loadingBar.parentNode) {
+            loadingBar.parentNode.removeChild(loadingBar);
+        }
+        
         let { suburb, state, postcode } = parseAddress(address);
 
         let config = {
@@ -774,24 +951,62 @@
             // Create the floating bar
             let barDiv = document.createElement('div');
             barDiv.id = 'property-insights-bar';
+            
+            // Format metrics for the top bar
+            let worthBuying = parseFloat(metrics.annualCashFlow) > 0 && parseFloat(metrics.irr10) > 8 && parseFloat(metrics.cashOnCashAfterTax) > 8;
+            let priceDisplay = currentPrice.replace('$', '').replace(',', '').length > 0 ? currentPrice : 'N/A';
+            let rentalDisplay = currentRental.replace('$', '').replace(',', '').length > 0 ? currentRental : 'N/A';
+            let yieldDisplay = metrics.rentalYield;
+            let growthDisplay = metrics.suburbGrowth.replace(' (Fetched from yourinvestmentpropertymag.com.au)', '');
+            let cashFlowDisplay = metrics.annualCashFlow;
+            let irrDisplay = metrics.irr10;
+            
             barDiv.innerHTML = `
-                <div class="flex justify-between items-center">
-                    <h2 class="text-xl font-bold text-gray-800">Property Insights</h2>
-                    <div>
-                        <button id="toggleButton" class="bg-blue-600 text-white px-4 py-1 rounded-lg hover:bg-blue-700 transition duration-300">
-                            <i class="fas fa-chevron-down mr-2"></i>Expand Insights
-                        </button>
-                        <button id="cogButton" class="ml-2 text-gray-600 hover:text-gray-800 transition duration-300">
-                            <i class="fas fa-cog"></i>
-                        </button>
+                <div class="metrics-container">
+                    <div class="metric">
+                        <span class="metric-label">Price:</span>
+                        <span class="metric-value">${priceDisplay}</span>
                     </div>
+                    <div class="metric">
+                        <span class="metric-label">Rent:</span>
+                        <span class="metric-value">${rentalDisplay}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Yield:</span>
+                        <span class="metric-value">${yieldDisplay}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Growth:</span>
+                        <span class="metric-value">${growthDisplay}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Cash Flow:</span>
+                        <span class="metric-value ${parseFloat(cashFlowDisplay) > 0 ? 'positive' : 'negative'}">$${parseFloat(cashFlowDisplay).toLocaleString()}/yr</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">IRR (10y):</span>
+                        <span class="metric-value ${parseFloat(irrDisplay) > 8 ? 'positive' : 'negative'}">${irrDisplay}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Worth Buying:</span>
+                        <span class="metric-value ${worthBuying ? 'positive' : 'negative'}">${worthBuying ? 'Yes' : 'No'}</span>
+                    </div>
+                </div>
+                <div class="controls">
+                    <button id="toggleButton">
+                        <i class="fas fa-chevron-down mr-1"></i> Details
+                    </button>
+                    <button id="cogButton">
+                        <i class="fas fa-cog"></i>
+                    </button>
                 </div>
             `;
 
             // Create the insights panel (dropdown)
             let infoDiv = document.createElement('div');
-            infoDiv.className = 'hidden bg-white p-4';
+            infoDiv.className = 'hidden';
             infoDiv.id = 'property-insights';
+            infoDiv.style.display = 'none'; // Ensure panel is hidden initially
 
             let summaryDiv = document.createElement('div');
             summaryDiv.className = 'text-gray-700';
@@ -801,72 +1016,8 @@
 
             let configDiv = document.createElement('div');
             configDiv.className = 'hidden mt-4 p-4 bg-gray-50 rounded-lg';
-            configDiv.innerHTML = `
-                <h4 class="text-lg font-semibold text-gray-800 mb-4">Configuration</h4>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Rental Growth Rate (%):</label>
-                        <input type="number" id="rentalGrowthRate" value="${(config.rentalGrowthRate * 100).toFixed(2)}" step="0.01" class="border rounded-lg p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Yield Type:</label>
-                        <select id="yieldType" class="border rounded-lg p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="gross" ${config.yieldType === 'gross' ? 'selected' : ''}>Gross</option>
-                            <option value="net" ${config.yieldType === 'net' ? 'selected' : ''}>Net</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Interest Rate (%):</label>
-                        <input type="number" id="interestRate" value="${(config.interestRate * 100).toFixed(2)}" step="0.01" class="border rounded-lg p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Vacancy Rate (%):</label>
-                        <input type="number" id="vacancyRate" value="${(config.vacancyRate * 100).toFixed(2)}" step="0.01" class="border rounded-lg p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Management Fee (%):</label>
-                        <input type="number" id="managementFee" value="${(config.managementFee * 100).toFixed(2)}" step="0.01" class="border rounded-lg p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Depreciation Rate (Buildings, %):</label>
-                        <input type="number" id="depreciationBuildingsRate" value="${(config.depreciationBuildingsRate * 100).toFixed(2)}" step="0.01" class="border rounded-lg p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Construction Cost ($):</label>
-                        <input type="number" id="constructionCost" value="${config.constructionCost}" step="1000" class="border rounded-lg p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Fittings Value ($):</label>
-                        <input type="number" id="fittingsValue" value="${config.fittingsValue}" step="1000" class="border rounded-lg p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Income A ($):</label>
-                        <input type="number" id="incomeA" value="${config.incomeA}" step="1000" class="border rounded-lg p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Allocation A (%):</label>
-                        <input type="number" id="allocationA" value="${(config.allocationA * 100).toFixed(2)}" step="1" class="border rounded-lg p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Income B ($):</label>
-                        <input type="number" id="incomeB" value="${config.incomeB}" step="1000" class="border rounded-lg p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Allocation B (%):</label>
-                        <input type="number" id="allocationB" value="${(config.allocationB * 100).toFixed(2)}" step="1" class="border rounded-lg p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">LVR (%):</label>
-                        <input type="number" id="lvrRate" value="${(config.lvrRate * 100).toFixed(2)}" step="1" class="border rounded-lg p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div class="flex items-center">
-                        <label class="block text-sm font-medium text-gray-700 mr-2">Show Sensitivity Analysis:</label>
-                        <input type="checkbox" id="sensitivity" ${config.sensitivity ? 'checked' : ''}>
-                    </div>
-                </div>
-                <button id="saveConfig" class="mt-4 w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-300">Save</button>
-            `;
-
+            
+            // Restore the complete data display logic here
             function updateDisplay() {
                 let worthBuying = parseFloat(metrics.annualCashFlow) > 0 && parseFloat(metrics.irr10) > 8 && parseFloat(metrics.cashOnCashAfterTax) > 8;
                 let cashFlowColor = parseFloat(metrics.annualCashFlow) > 0 ? 'text-green-600' : 'text-red-600';
@@ -875,132 +1026,96 @@
                 let cocColor = parseFloat(metrics.cashOnCashAfterTax) > 8 ? 'text-green-600' : 'text-red-600';
 
                 summaryDiv.innerHTML = `
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="p-4 bg-blue-50 rounded-lg">
-                            <p class="font-semibold text-gray-800"><i class="fas fa-home mr-2"></i>Price:</p>
-                            <p class="text-lg ${parseFloat(currentPrice.replace(/[^0-9.-]+/g,"")) > 0 ? 'text-gray-700' : 'text-red-600'}">${currentPrice}</p>
-                        </div>
-                        <div class="p-4 bg-blue-50 rounded-lg">
-                            <p class="font-semibold text-gray-800"><i class="fas fa-money-bill-wave mr-2"></i>Rental Estimate:</p>
-                            <p class="text-lg ${parseFloat(currentRental.replace(/[^0-9.-]+/g,"")) > 0 ? 'text-gray-700' : 'text-red-600'}">${currentRental}</p>
-                        </div>
-                        <div class="p-4 bg-blue-50 rounded-lg">
-                            <p class="font-semibold text-gray-800"><i class="fas fa-percentage mr-2"></i>Rental Yield:</p>
-                            <p class="text-lg text-gray-700">${metrics.rentalYield}</p>
-                        </div>
-                        <div class="p-4 bg-blue-50 rounded-lg">
-                            <p class="font-semibold text-gray-800"><i class="fas fa-chart-line mr-2"></i>Suburb Growth:</p>
-                            <p class="text-lg text-gray-700">${metrics.suburbGrowth}</p>
-                        </div>
-                        <div class="p-4 bg-blue-50 rounded-lg">
-                            <p class="font-semibold text-gray-800"><i class="fas fa-hand-holding-usd mr-2"></i>Pre-Tax Cash Flow:</p>
-                            <p class="text-lg ${preTaxColor}">$${parseFloat(metrics.preTaxCashFlow).toLocaleString()}</p>
-                        </div>
-                        <div class="p-4 bg-blue-50 rounded-lg">
-                            <p class="font-semibold text-gray-800"><i class="fas fa-hand-holding-usd mr-2"></i>After-Tax Cash Flow:</p>
-                            <p class="text-lg ${cashFlowColor}">$${parseFloat(metrics.annualCashFlow).toLocaleString()}</p>
-                        </div>
-                        <div class="p-4 bg-blue-50 rounded-lg">
-                            <p class="font-semibold text-gray-800"><i class="fas fa-chart-pie mr-2"></i>10-Year IRR:</p>
-                            <p class="text-lg ${irrColor}">${metrics.irr10}${config.sensitivity ? ` (Range: ${irr10Low} to ${irr10High})` : ''}</p>
-                        </div>
-                        <div class="p-4 bg-blue-50 rounded-lg">
-                            <p class="font-semibold text-gray-800"><i class="fas fa-percentage mr-2"></i>Cash on Cash (After Tax):</p>
-                            <p class="text-lg ${cocColor}">${metrics.cashOnCashAfterTax}</p>
-                        </div>
-                        <div class="col-span-2 p-4 bg-green-50 rounded-lg text-center">
-                            <p class="font-semibold text-gray-800"><i class="fas fa-thumbs-${worthBuying ? 'up' : 'down'} mr-2"></i>Worth Buying?</p>
-                            <p class="text-lg ${worthBuying ? 'text-green-600' : 'text-red-600'}">${worthBuying ? 'Yes' : 'No'}</p>
-                        </div>
-                    </div>
-                `;
-
-                let cashFlowDisplay;
-                if (currentPeriod === 'weekly') {
-                    cashFlowDisplay = `$${parseFloat(metrics.weeklyCashFlow).toLocaleString()}/week`;
-                } else if (currentPeriod === 'fortnightly') {
-                    cashFlowDisplay = `$${parseFloat(metrics.fortnightlyCashFlow).toLocaleString()}/fortnight`;
-                } else if (currentPeriod === 'monthly') {
-                    cashFlowDisplay = `$${parseFloat(metrics.monthlyCashFlow).toLocaleString()}/month`;
-                } else {
-                    cashFlowDisplay = `$${parseFloat(metrics.annualCashFlow).toLocaleString()}/year`;
-                }
-
-                detailsDiv.innerHTML = `
-                    <div class="mb-4 flex justify-between items-center">
-                        <div class="flex items-center space-x-2">
-                            <label class="font-semibold text-gray-800">Price:</label>
-                            <input id="priceInput" type="text" value="${currentPrice}" class="border rounded-lg p-2 w-32 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <label class="font-semibold text-gray-800">Rental (Weekly):</label>
-                            <input id="rentalInput" type="text" value="${currentRental}" class="border rounded-lg p-2 w-32 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <label class="font-semibold text-gray-800">Period:</label>
-                            <select id="periodSelect" class="border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <option value="weekly" ${currentPeriod === 'weekly' ? 'selected' : ''}>Weekly</option>
-                                <option value="fortnightly" ${currentPeriod === 'fortnightly' ? 'selected' : ''}>Fortnightly</option>
-                                <option value="monthly" ${currentPeriod === 'monthly' ? 'selected' : ''}>Monthly</option>
-                                <option value="yearly" ${currentPeriod === 'yearly' ? 'selected' : ''}>Yearly</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div class="p-4 bg-gray-50 rounded-lg shadow">
-                            <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Financial Overview</h4>
-                            <p class="text-sm"><span class="font-medium">Price:</span> ${currentPrice}</p>
-                            <p class="text-sm"><span class="font-medium">Total Cost (incl. fees):</span> ${metrics.totalCost}</p>
-                            <p class="text-sm"><span class="font-medium">Rental Estimate:</span> ${currentRental}</p>
-                            <p class="text-sm"><span class="font-medium">Rental Yield:</span> ${metrics.rentalYield}</p>
-                            <p class="text-sm"><span class="font-medium">Pre-Tax Cash Flow:</span> $${parseFloat(metrics.preTaxCashFlow).toLocaleString()}</p>
-                            <p class="text-sm"><span class="font-medium">After-Tax Cash Flow:</span> ${cashFlowDisplay}</p>
-                            <p class="text-sm"><span class="font-medium">Break-Even Year:</span> ${metrics.breakEvenYear}</p>
-                            <p class="text-sm"><span class="font-medium">Cumulative Profit/Loss (10 Yr):</span> $${metrics.cumulativeProfitLoss[9]?.toLocaleString()}</p>
-                            <div class="mt-4">
-                                <canvas id="profitLossChart" style="height: 200px;"></canvas>
+                    <div class="p-4">
+                        <button id="collapseMetricsBtn" class="w-full bg-blue-500 text-white py-2 rounded mb-4">Collapse Metrics</button>
+                        <h2 class="text-xl font-bold text-gray-800 mb-4">Property Insights</h2>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <!-- Financial Overview Section -->
+                            <div class="p-4 bg-gray-50 rounded-lg shadow">
+                                <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Financial Overview</h4>
+                                <p class="text-sm"><span class="font-medium">Price:</span> ${currentPrice}</p>
+                                <p class="text-sm"><span class="font-medium">Total Cost (incl. fees):</span> ${metrics.totalCost}</p>
+                                <p class="text-sm"><span class="font-medium">Rental Estimate:</span> ${currentRental}</p>
+                                <p class="text-sm"><span class="font-medium">Rental Yield:</span> ${metrics.rentalYield}</p>
+                                <p class="text-sm"><span class="font-medium">Pre-Tax Cash Flow:</span> <span class="${preTaxColor}">$${parseFloat(metrics.preTaxCashFlow).toLocaleString()}</span></p>
+                                <p class="text-sm"><span class="font-medium">After-Tax Cash Flow:</span> <span class="${cashFlowColor}">$${parseFloat(metrics.annualCashFlow).toLocaleString()}</span></p>
+                                <p class="text-sm"><span class="font-medium">Break-Even Year:</span> ${metrics.breakEvenYear}</p>
+                                <p class="text-sm"><span class="font-medium">Cumulative Profit/Loss (10 Yr):</span> $${metrics.cumulativeProfitLoss[9]?.toLocaleString()}</p>
+                                <div class="mt-4">
+                                    <canvas id="profitLossChart" style="height: 200px;"></canvas>
+                                </div>
+                            </div>
+                            
+                            <!-- Tax & Deductions Section -->
+                            <div class="p-4 bg-gray-50 rounded-lg shadow">
+                                <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Tax & Deductions</h4>
+                                <p class="text-sm"><span class="font-medium">Tax Savings A:</span> $${parseFloat(metrics.taxSavingsA).toLocaleString()}</p>
+                                <p class="text-sm"><span class="font-medium">Tax Savings B:</span> $${parseFloat(metrics.taxSavingsB).toLocaleString()}</p>
+                                <p class="text-sm"><span class="font-medium">Annual Costs:</span> $${parseFloat(metrics.totalCosts).toLocaleString()}</p>
+                                <p class="text-sm"><span class="font-medium">Depreciation (Buildings):</span> ${metrics.depreciationBuildings}</p>
+                                <p class="text-sm"><span class="font-medium">Depreciation (Fittings, Yr 1):</span> ${metrics.depreciationFittings}</p>
+                            </div>
+                            
+                            <!-- Growth & Returns Section -->
+                            <div class="p-4 bg-gray-50 rounded-lg shadow">
+                                <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Growth & Returns</h4>
+                                <p class="text-sm"><span class="font-medium">Suburb Growth:</span> ${metrics.suburbGrowth}</p>
+                                <p class="text-sm"><span class="font-medium">3-Year IRR:</span> ${metrics.irr3}</p>
+                                <p class="text-sm"><span class="font-medium">5-Year IRR:</span> ${metrics.irr5}</p>
+                                <p class="text-sm"><span class="font-medium">10-Year IRR:</span> <span class="${irrColor}">${metrics.irr10}</span>${config.sensitivity ? ` (Range: ${irr10Low} to ${irr10High})` : ''}</p>
+                                <p class="text-sm"><span class="font-medium">Cash on Cash (Before Tax):</span> ${metrics.cashOnCashBeforeTax}</p>
+                                <p class="text-sm"><span class="font-medium">Cash on Cash (After Tax):</span> <span class="${cocColor}">${metrics.cashOnCashAfterTax}</span></p>
+                                <div class="mt-4">
+                                    <canvas id="futureValueChart" style="height: 200px;"></canvas>
+                                </div>
+                            </div>
+                            
+                            <!-- Future Estimates Section -->
+                            <div class="p-4 bg-gray-50 rounded-lg shadow">
+                                <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Future Estimates</h4>
+                                <p class="text-sm"><span class="font-medium">Est. Price (3 Yr):</span> ${metrics.futurePrice3}</p>
+                                <p class="text-sm"><span class="font-medium">Est. Price (5 Yr):</span> ${metrics.futurePrice5}</p>
+                                <p class="text-sm"><span class="font-medium">Est. Price (10 Yr):</span> ${metrics.futurePrice10}</p>
+                                <p class="text-sm"><span class="font-medium">Est. Rent (3 Yr):</span> ${metrics.futureRent3}</p>
+                                <p class="text-sm"><span class="font-medium">Est. Rent (5 Yr):</span> ${metrics.futureRent5}</p>
+                                <p class="text-sm"><span class="font-medium">Est. Rent (10 Yr):</span> ${metrics.futureRent10}</p>
                             </div>
                         </div>
-                        <div class="p-4 bg-gray-50 rounded-lg shadow">
-                            <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Tax & Deductions</h4>
-                            <p class="text-sm"><span class="font-medium">Tax Savings A:</span> $${metrics.taxSavingsA}</p>
-                            <p class="text-sm"><span class="font-medium">Tax Savings B:</span> $${metrics.taxSavingsB}</p>
-                            <p class="text-sm"><span class="font-medium">Annual Costs:</span> $${metrics.totalCosts}</p>
-                            <p class="text-sm"><span class="font-medium">Depreciation (Buildings):</span> ${metrics.depreciationBuildings}</p>
-                            <p class="text-sm"><span class="font-medium">Depreciation (Fittings, Yr 1):</span> ${metrics.depreciationFittings}</p>
-                        </div>
-                        <div class="p-4 bg-gray-50 rounded-lg shadow">
-                            <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Growth & Returns</h4>
-                            <p class="text-sm"><span class="font-medium">Suburb Growth:</span> ${metrics.suburbGrowth}</p>
-                            <p class="text-sm"><span class="font-medium">3-Year IRR:</span> ${metrics.irr3}</p>
-                            <p class="text-sm"><span class="font-medium">5-Year IRR:</span> ${metrics.irr5}</p>
-                            <p class="text-sm"><span class="font-medium">10-Year IRR:</span> ${metrics.irr10}${config.sensitivity ? ` (Range: ${irr10Low} to ${irr10High})` : ''}</p>
-                            <p class="text-sm"><span class="font-medium">Cash on Cash (Before Tax):</span> ${metrics.cashOnCashBeforeTax}</p>
-                            <p class="text-sm"><span class="font-medium">Cash on Cash (After Tax):</span> ${metrics.cashOnCashAfterTax}</p>
-                            <div class="mt-4">
-                                <canvas id="futureValueChart" style="height: 200px;"></canvas>
-                            </div>
-                        </div>
-                        <div class="p-4 bg-gray-50 rounded-lg shadow">
-                            <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Future Estimates</h4>
-                            <p class="text-sm"><span class="font-medium">Est. Price (3 Yr):</span> ${metrics.futurePrice3}</p>
-                            <p class="text-sm"><span class="font-medium">Est. Price (5 Yr):</span> ${metrics.futurePrice5}</p>
-                            <p class="text-sm"><span class="font-medium">Est. Price (10 Yr):</span> ${metrics.futurePrice10}</p>
-                            <p class="text-sm"><span class="font-medium">Est. Rent (3 Yr):</span> ${metrics.futureRent3}</p>
-                            <p class="text-sm"><span class="font-medium">Est. Rent (5 Yr):</span> ${metrics.futureRent5}</p>
-                            <p class="text-sm"><span class="font-medium">Est. Rent (10 Yr):</span> ${metrics.futureRent10}</p>
-                        </div>
-                        <div class="p-4 bg-gray-50 rounded-lg shadow">
+                        
+                        <!-- Equity & Leverage Section -->
+                        <div class="mt-4 p-4 bg-gray-50 rounded-lg shadow">
                             <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Equity & Leverage</h4>
                             <p class="text-sm"><span class="font-medium">Equity:</span> ${metrics.equity}</p>
                             <p class="text-sm"><span class="font-medium">LVR:</span> ${metrics.lvr}</p>
                         </div>
+                        
+                        <p class="mt-4 text-xs text-gray-500 italic">Note: Suburb growth fetched dynamically. Costs assume ${metrics.lvr} LVR, ${(metrics.interestRate * 100).toFixed(2)}% loan, ${(metrics.managementFee * 100).toFixed(2)}% management, $${metrics.strata.toLocaleString()} strata, etc.</p>
+                        
+                        <div class="mt-4 flex justify-between">
+                            <div class="flex items-center space-x-2">
+                                <label class="font-semibold text-gray-800">Price:</label>
+                                <input id="priceInput" type="text" value="${currentPrice}" class="border rounded-lg p-2 w-32 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <label class="font-semibold text-gray-800">Rental (Weekly):</label>
+                                <input id="rentalInput" type="text" value="${currentRental}" class="border rounded-lg p-2 w-32 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <label class="font-semibold text-gray-800">Period:</label>
+                                <select id="periodSelect" class="border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="weekly" ${currentPeriod === 'weekly' ? 'selected' : ''}>Weekly</option>
+                                    <option value="fortnightly" ${currentPeriod === 'fortnightly' ? 'selected' : ''}>Fortnightly</option>
+                                    <option value="monthly" ${currentPeriod === 'monthly' ? 'selected' : ''}>Monthly</option>
+                                    <option value="yearly" ${currentPeriod === 'yearly' ? 'selected' : ''}>Yearly</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
-                    <p class="mt-4 text-xs text-gray-500 italic">Note: Suburb growth fetched dynamically. Costs assume ${metrics.lvr} LVR, ${(metrics.interestRate * 100).toFixed(2)}% loan, ${(metrics.managementFee * 100).toFixed(2)}% management, $${metrics.strata.toLocaleString()} strata, etc.</p>
                 `;
 
                 setTimeout(() => {
-                    let futureValueCanvas = detailsDiv.querySelector('#futureValueChart');
+                    let futureValueCanvas = summaryDiv.querySelector('#futureValueChart');
                     if (futureValueCanvas) {
                         let ctx = futureValueCanvas.getContext('2d');
                         new Chart(ctx, {
@@ -1030,7 +1145,7 @@
                         });
                     }
 
-                    let profitLossCanvas = detailsDiv.querySelector('#profitLossChart');
+                    let profitLossCanvas = summaryDiv.querySelector('#profitLossChart');
                     if (profitLossCanvas) {
                         let ctx = profitLossCanvas.getContext('2d');
                         new Chart(ctx, {
@@ -1059,6 +1174,21 @@
                         });
                     }
                 }, 0);
+                
+                // Add event listener for the collapse button
+                setTimeout(() => {
+                    const collapseBtn = summaryDiv.querySelector('#collapseMetricsBtn');
+                    if (collapseBtn) {
+                        collapseBtn.addEventListener('click', function() {
+                            infoDiv.classList.add('hidden');
+                            infoDiv.style.display = 'none';
+                            summaryDiv.classList.add('hidden');
+                            detailsDiv.classList.add('hidden');
+                            configDiv.classList.add('hidden');
+                            barDiv.querySelector('#toggleButton').innerHTML = `<i class="fas fa-chevron-down mr-1"></i> Details`;
+                        });
+                    }
+                }, 0);
             }
 
             let irr10Low = 'N/A';
@@ -1080,85 +1210,23 @@
             barDiv.querySelector('#toggleButton').onclick = function() {
                 if (infoDiv.classList.contains('hidden')) {
                     infoDiv.classList.remove('hidden');
+                    infoDiv.style.display = 'block';
                     summaryDiv.classList.remove('hidden');
                     detailsDiv.classList.add('hidden');
                     configDiv.classList.add('hidden');
-                    this.innerHTML = `<i class="fas fa-chevron-up mr-2"></i>Collapse Insights`;
+                    this.innerHTML = `<i class="fas fa-chevron-up mr-1"></i> Hide`;
                 } else {
                     infoDiv.classList.add('hidden');
+                    infoDiv.style.display = 'none';
                     summaryDiv.classList.add('hidden');
                     detailsDiv.classList.add('hidden');
                     configDiv.classList.add('hidden');
-                    this.innerHTML = `<i class="fas fa-chevron-down mr-2"></i>Expand Insights`;
+                    this.innerHTML = `<i class="fas fa-chevron-down mr-1"></i> Details`;
                 }
             };
 
-            barDiv.querySelector('#cogButton').onclick = function() {
-                if (configDiv.classList.contains('hidden')) {
-                    infoDiv.classList.remove('hidden');
-                    configDiv.classList.remove('hidden');
-                    detailsDiv.classList.add('hidden');
-                    summaryDiv.classList.add('hidden');
-                    barDiv.querySelector('#toggleButton').innerHTML = `<i class="fas fa-chevron-down mr-2"></i>Expand Insights`;
-                } else {
-                    configDiv.classList.add('hidden');
-                    summaryDiv.classList.remove('hidden');
-                }
-            };
-
-            configDiv.querySelector('#saveConfig').onclick = function() {
-                config.rentalGrowthRate = parseFloat(configDiv.querySelector('#rentalGrowthRate').value) / 100;
-                config.yieldType = configDiv.querySelector('#yieldType').value;
-                config.interestRate = parseFloat(configDiv.querySelector('#interestRate').value) / 100;
-                config.vacancyRate = parseFloat(configDiv.querySelector('#vacancyRate').value) / 100;
-                config.managementFee = parseFloat(configDiv.querySelector('#managementFee').value) / 100;
-                config.depreciationBuildingsRate = parseFloat(configDiv.querySelector('#depreciationBuildingsRate').value) / 100;
-                config.constructionCost = parseFloat(configDiv.querySelector('#constructionCost').value);
-                config.fittingsValue = parseFloat(configDiv.querySelector('#fittingsValue').value);
-                config.incomeA = parseFloat(configDiv.querySelector('#incomeA').value);
-                config.incomeB = parseFloat(configDiv.querySelector('#incomeB').value);
-                config.allocationA = parseFloat(configDiv.querySelector('#allocationA').value) / 100;
-                config.allocationB = parseFloat(configDiv.querySelector('#allocationB').value) / 100;
-                config.lvrRate = parseFloat(configDiv.querySelector('#lvrRate').value) / 100;
-                config.sensitivity = configDiv.querySelector('#sensitivity').checked;
-
-                GM_setValue('rentalGrowthRate', config.rentalGrowthRate);
-                GM_setValue('yieldType', config.yieldType);
-                GM_setValue('interestRate', config.interestRate);
-                GM_setValue('vacancyRate', config.vacancyRate);
-                GM_setValue('managementFee', config.managementFee);
-                GM_setValue('depreciationBuildingsRate', config.depreciationBuildingsRate);
-                GM_setValue('constructionCost', config.constructionCost);
-                GM_setValue('fittingsValue', config.fittingsValue);
-                GM_setValue('incomeA', config.incomeA);
-                GM_setValue('incomeB', config.incomeB);
-                GM_setValue('allocationA', config.allocationA);
-                GM_setValue('allocationB', config.allocationB);
-                GM_setValue('lvrRate', config.lvrRate);
-                GM_setValue('sensitivity', config.sensitivity);
-
-                configDiv.classList.add('hidden');
-                summaryDiv.classList.remove('hidden');
-
-                calculateMetrics(currentPrice, currentRental, config, state, suburb, postcode, function(updatedMetrics) {
-                    metrics = updatedMetrics;
-                    if (config.sensitivity) {
-                        let configLow = { ...config, suburbGrowthRate: metrics.suburbGrowthRate - 0.02 };
-                        let configHigh = { ...config, suburbGrowthRate: metrics.suburbGrowthRate + 0.02 };
-                        calculateMetrics(currentPrice, currentRental, configLow, state, suburb, postcode, function(metricsLow) {
-                            calculateMetrics(currentPrice, currentRental, configHigh, state, suburb, postcode, function(metricsHigh) {
-                                irr10Low = metricsLow.irr10;
-                                irr10High = metricsHigh.irr10;
-                                updateDisplay();
-                            });
-                        });
-                    } else {
-                        updateDisplay();
-                    }
-                });
-            };
-
-            detailsDiv.addEventListener('input', function(e) {
+            // Attach event listener for price/rental inputs
+            infoDiv.addEventListener('input', function(e) {
                 if (e.target.id === 'priceInput') {
                     currentPrice = e.target.value;
                 } else if (e.target.id === 'rentalInput') {
@@ -1182,52 +1250,128 @@
                 });
             });
 
-            detailsDiv.addEventListener('change', function(e) {
+            // Attach event listener for period select
+            infoDiv.addEventListener('change', function(e) {
                 if (e.target.id === 'periodSelect') {
                     currentPeriod = e.target.value;
                     updateDisplay();
                 }
             });
 
+            barDiv.querySelector('#cogButton').onclick = function() {
+                if (configDiv.classList.contains('hidden')) {
+                    infoDiv.classList.remove('hidden');
+                    infoDiv.style.display = 'block';
+                    configDiv.classList.remove('hidden');
+                    detailsDiv.classList.add('hidden');
+                    summaryDiv.classList.add('hidden');
+                    barDiv.querySelector('#toggleButton').innerHTML = `<i class="fas fa-chevron-down mr-1"></i> Details`;
+                } else {
+                    configDiv.classList.add('hidden');
+                    summaryDiv.classList.remove('hidden');
+                }
+            };
+
             infoDiv.appendChild(summaryDiv);
             infoDiv.appendChild(detailsDiv);
             infoDiv.appendChild(configDiv);
 
-            // Append elements to the body
+            // Append elements to the body - ensure it's the first element and doesn't block the menu
             if (document.body) {
                 console.log('Appending bar and insights panel to the DOM');
+                // Insert at the very top, but with correct z-index to not block menus
+                document.body.insertBefore(infoDiv, document.body.firstChild);
                 document.body.insertBefore(barDiv, document.body.firstChild);
-                document.body.insertBefore(infoDiv, barDiv.nextSibling);
+                
+                // More precise layout adjustment
+                adjustPageLayout();
+                
+                // Remove any body padding that might have been added by loading bar
+                document.body.style.paddingTop = '';
             } else {
                 console.error('document.body is not available');
             }
         });
     }
 
-    // Main execution
-    console.log('Script started on: ', window.location.href);
-    let address = getAddress();
-    if (address) {
+    // Performance optimization: Lazy load less critical resources
+    function lazyLoadResources() {
+        // Only load font awesome if needed and not already loaded
+        if (!document.querySelector('link[href*="font-awesome"]')) {
+            let fontAwesome = document.createElement('link');
+            fontAwesome.rel = 'stylesheet';
+            fontAwesome.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css';
+            document.head.appendChild(fontAwesome);
+        }
+    }
+    
+    // Parallel data fetching for improved performance
+    function parallelDataFetch(address, callback) {
         getPID(address, function(pid, source) {
+            // Start a timer for fallback
+            let fallbackTimer = setTimeout(() => {
+                console.log('Using fallback data due to timeout');
+                let fallbackData = getFallbackData();
+                if (typeof callback === 'function') {
+                    callback(fallbackData.price, fallbackData.rental);
+                }
+            }, 10000); // 10 second timeout
+            
             if (pid && source) {
                 let propertyUrl = constructPropertyUrl(pid, source);
                 if (propertyUrl) {
-                    setTimeout(() => {
-                        fetchPropertyData(propertyUrl, function(price, rental) {
-                            displayData(price, rental, address);
-                        });
-                    }, 5000);
+                    fetchPropertyData(propertyUrl, function(price, rental) {
+                        clearTimeout(fallbackTimer); // Cancel fallback
+                        if (typeof callback === 'function') {
+                            callback(price, rental);
+                        }
+                    });
                 } else {
+                    clearTimeout(fallbackTimer);
                     console.error('Failed to construct property URL');
-                    displayData('Error: Unable to construct property URL', 'N/A', address);
+                    let fallbackData = getFallbackData();
+                    if (typeof callback === 'function') {
+                        callback(fallbackData.price, fallbackData.rental);
+                    }
                 }
             } else {
+                clearTimeout(fallbackTimer);
                 console.error('PID or source not found');
-                displayData('Error: PID not found', 'N/A', address);
+                let fallbackData = getFallbackData();
+                if (typeof callback === 'function') {
+                    callback(fallbackData.price, fallbackData.rental);
+                }
             }
         });
+    }
+
+    // Main execution with performance improvements
+    console.log('Script started on: ', window.location.href);
+    
+    // Load non-critical resources lazily
+    setTimeout(lazyLoadResources, 0);
+    
+    // Start extracting data immediately
+    let address = getAddress();
+    if (address) {
+        parallelDataFetch(address, function(price, rental) {
+            displayData(price, rental, address);
+        });
     } else {
-        console.error('No address found, script aborted');
-        displayData('Error: Address not found on page', 'N/A', null);
+        // If address not found initially, retry after short delay
+        setTimeout(() => {
+            address = getAddress();
+            if (address) {
+                parallelDataFetch(address, function(price, rental) {
+                    displayData(price, rental, address);
+                });
+            } else {
+                console.error('No address found after retry, script aborted');
+                // Remove loading indicator if we can't proceed
+                if (loadingBar && loadingBar.parentNode) {
+                    loadingBar.parentNode.removeChild(loadingBar);
+                }
+            }
+        }, 1000);
     }
 })();
