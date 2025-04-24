@@ -11,6 +11,7 @@ PropertyScanner is a TamperMonkey user script designed to fetch and analyze prop
 - **Dynamic UI**: Displays insights in a floating bar and an expandable panel with interactive charts and configurable settings.
 - **Customization**: Allows users to adjust parameters like interest rates, rental growth rates, and income allocations for tailored analysis.
 - **Fallback Mechanism**: Uses fallback data extraction methods if primary sources fail to provide information.
+![Screenshot of what the component looks like](https://github.com/eamonbarker/PropertyScanner/blob/main/Screenshot%202025-04-24%20at%2016.39.15.png?raw=true)
 
 ## Installation
 
