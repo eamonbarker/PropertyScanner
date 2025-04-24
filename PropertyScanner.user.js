@@ -697,7 +697,10 @@
             suburbGrowthRate: 0.1437,
             interestRate: 0.0622,
             managementFee: 0.08,
-            strata: 5000
+            strata: 5000,
+            yearByYearDetails: [], // Added for year-by-year analysis
+            loanAmount: 0,
+            lvrPercent: 0
         };
 
         if (price === 0 || weeklyRent === 0) {
@@ -799,7 +802,10 @@
             let annualProfitLoss = [];
             let cumulativeProfitLoss = [];
             let cumulative = 0;
-            for (let year = 1; year <= 10; year++) {
+            let yearByYearDetails = [];
+            
+            for (let year = 1; year <= 15; year++) {
+                let futurePropertyValue = Math.round(price * Math.pow(1 + suburbGrowthRate, year));
                 let futureAnnualRent = annualRent * Math.pow(1 + rentalGrowthRate, year);
                 let futureNetRent = futureAnnualRent * (1 - vacancyRate);
                 let futurePreTaxCashFlow = futureNetRent - totalCosts;
@@ -813,9 +819,30 @@
                     futureTaxSavingsB = calculateTax(incomeB) - calculateTax(Math.max(0, incomeB - lossB));
                 }
                 let futureAfterTaxCashFlow = futurePreTaxCashFlow + futureTaxSavingsA + futureTaxSavingsB;
-                annualProfitLoss.push(Math.round(futureAfterTaxCashFlow));
-                cumulative += futureAfterTaxCashFlow;
-                cumulativeProfitLoss.push(Math.round(cumulative));
+                
+                // Calculate LVR for each year
+                let futureLoanAmount = loanAmount; // Assuming interest-only loan
+                let futureLVR = ((futureLoanAmount / futurePropertyValue) * 100).toFixed(2);
+                let futureEquity = futurePropertyValue - futureLoanAmount;
+                
+                if (year <= 10) {
+                    annualProfitLoss.push(Math.round(futureAfterTaxCashFlow));
+                    cumulative += futureAfterTaxCashFlow;
+                    cumulativeProfitLoss.push(Math.round(cumulative));
+                }
+                
+                // Store detailed year-by-year metrics
+                yearByYearDetails.push({
+                    year,
+                    propertyValue: futurePropertyValue,
+                    loanAmount: futureLoanAmount,
+                    lvrValue: futureLVR,  // Changed from 'lvr' to 'lvrValue' to avoid reserved word
+                    equity: futureEquity,
+                    rentAmount: Math.round(futureAnnualRent),  // Changed from 'rent' to 'rentAmount'
+                    preTaxCashFlow: Math.round(futurePreTaxCashFlow),
+                    afterTaxCashFlow: Math.round(futureAfterTaxCashFlow),
+                    cumulativeCashFlow: year === 1 ? Math.round(futureAfterTaxCashFlow) : Math.round(yearByYearDetails[year-2].cumulativeCashFlow + futureAfterTaxCashFlow)
+                });
             }
 
             let breakEvenYear = 'N/A';
@@ -879,10 +906,13 @@
                 futureValues: futureValues,
                 annualProfitLoss: annualProfitLoss,
                 cumulativeProfitLoss: cumulativeProfitLoss,
+                yearByYearDetails: yearByYearDetails,
                 suburbGrowthRate: suburbGrowthRate,
                 interestRate: interestRate,
                 managementFee: managementFee,
-                strata: strata
+                strata: strata,
+                loanAmount: loanAmount,
+                lvrPercent: parseFloat(lvr)
             });
         });
     }
@@ -913,6 +943,84 @@
         }
 
         return irr * 100;
+    }
+
+    // Function to fetch suburb demographic data
+    function fetchSuburbDemographics(suburb, state, postcode, callback) {
+        const url = `https://www.domain.com.au/suburb-profile/${suburb}-${state}-${postcode}`;
+        console.log(`Fetching suburb data from: ${url}`);
+        
+        GM.xmlHttpRequest({
+            method: 'GET',
+            url: url,
+            onload: function(response) {
+                console.log(`Domain.com.au response status: ${response.status}`);
+                if (response.status === 200) {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(response.responseText, 'text/html');
+                    
+                    let data = {
+                        medianPrices: {},
+                        avgDaysOnMarket: {},
+                        soldThisYear: {},
+                        source: 'domain.com.au'
+                    };
+                    
+                    // Extract Market Trends table data
+                    const marketRows = doc.querySelectorAll('tbody[data-testid="insight"] tr');
+                    console.log(`Found ${marketRows.length} market trend rows`);
+                    
+                    marketRows.forEach(row => {
+                        // Extract bedroom count and property type
+                        const bedroomCell = row.querySelector('td:first-child');
+                        const typeCell = row.querySelector('td:nth-child(2)');
+                        
+                        if (bedroomCell && typeCell) {
+                            const bedroomText = bedroomCell.textContent.trim();
+                            const bedrooms = bedroomText.match(/\d+/)[0];
+                            const propertyType = typeCell.textContent.trim().toLowerCase();
+                            const key = `${bedrooms}bed-${propertyType}`;
+                            
+                            // Extract median price
+                            const priceCell = row.querySelector('td:nth-child(3)');
+                            if (priceCell) {
+                                data.medianPrices[key] = priceCell.textContent.trim();
+                            }
+                            
+                            // Extract days on market
+                            const daysCell = row.querySelector('td:nth-child(4)');
+                            if (daysCell) {
+                                data.avgDaysOnMarket[key] = daysCell.textContent.trim();
+                            }
+                            
+                            // Extract sold count
+                            const soldCell = row.querySelector('td:nth-child(6)');
+                            if (soldCell) {
+                                data.soldThisYear[key] = soldCell.textContent.trim();
+                            }
+                        }
+                    });
+                    
+                    // Try to find population data if available anywhere on the page
+                    const pageText = doc.body.textContent;
+                    const popMatch = pageText.match(/population of ([\d,]+)/i);
+                    if (popMatch) data.population = popMatch[1];
+                    
+                    const ageMatch = pageText.match(/median age (?:is|of) (\d+)/i);
+                    if (ageMatch) data.medianAge = ageMatch[1];
+                    
+                    console.log("Extracted suburb data:", data);
+                    callback(data);
+                } else {
+                    console.error(`Failed to load domain.com.au data: ${response.status}`);
+                    callback(null);
+                }
+            },
+            onerror: function(err) {
+                console.error('Error fetching suburb data:', err);
+                callback(null);
+            }
+        });
     }
 
     // Function to display data with modern UI
@@ -946,6 +1054,22 @@
         let currentPrice = originalPrice;
         let currentRental = originalRental;
         let currentPeriod = 'yearly';
+        
+        // Store demographic data for later use
+        let suburbData = null;
+        
+        // Start fetching suburb data in parallel
+        if (suburb && state && postcode) {
+            fetchSuburbDemographics(suburb, state, postcode, function(data) {
+                suburbData = data;
+                console.log('Suburb data loaded:', suburbData);
+                // If the UI is already displayed, update it with the suburb data
+                const suburbDataElement = document.getElementById('suburb-data-container');
+                if (suburbDataElement) {
+                    updateSuburbDataDisplay(suburbDataElement, suburbData, suburb, state, postcode);
+                }
+            });
+        }
 
         calculateMetrics(currentPrice, currentRental, config, state, suburb, postcode, function(metrics) {
             // Create the floating bar
@@ -965,11 +1089,11 @@
                 <div class="metrics-container">
                     <div class="metric">
                         <span class="metric-label">Price:</span>
-                        <span class="metric-value">${priceDisplay}</span>
+                        <input type="text" id="topPriceInput" value="${priceDisplay}" class="metric-value" style="width: 75px; border: none; background: transparent; font-weight: 500; color: #1f2937; font-size: 0.75rem;">
                     </div>
                     <div class="metric">
                         <span class="metric-label">Rent:</span>
-                        <span class="metric-value">${rentalDisplay}</span>
+                        <input type="text" id="topRentalInput" value="${rentalDisplay}" class="metric-value" style="width: 75px; border: none; background: transparent; font-weight: 500; color: #1f2937; font-size: 0.75rem;">
                     </div>
                     <div class="metric">
                         <span class="metric-label">Yield:</span>
@@ -1002,6 +1126,114 @@
                 </div>
             `;
 
+            // Add event listeners for top bar input fields
+            setTimeout(() => {
+                const topPriceInput = barDiv.querySelector('#topPriceInput');
+                const topRentalInput = barDiv.querySelector('#topRentalInput');
+                
+                if (topPriceInput) {
+                    topPriceInput.addEventListener('change', function() {
+                        currentPrice = this.value;
+                        // Update the detail view price input if it exists
+                        const detailPriceInput = document.getElementById('priceInput');
+                        if (detailPriceInput) detailPriceInput.value = currentPrice;
+                        
+                        calculateMetrics(currentPrice, currentRental, config, state, suburb, postcode, function(updatedMetrics) {
+                            metrics = updatedMetrics;
+                            if (config.sensitivity) {
+                                let configLow = { ...config, suburbGrowthRate: metrics.suburbGrowthRate - 0.02 };
+                                let configHigh = { ...config, suburbGrowthRate: metrics.suburbGrowthRate + 0.02 };
+                                calculateMetrics(currentPrice, currentRental, configLow, state, suburb, postcode, function(metricsLow) {
+                                    calculateMetrics(currentPrice, currentRental, configHigh, state, suburb, postcode, function(metricsHigh) {
+                                        irr10Low = metricsLow.irr10;
+                                        irr10High = metricsHigh.irr10;
+                                        updateDisplay();
+                                        updateTopBarMetrics();
+                                    });
+                                });
+                            } else {
+                                updateDisplay();
+                                updateTopBarMetrics();
+                            }
+                        });
+                    });
+                }
+                
+                if (topRentalInput) {
+                    topRentalInput.addEventListener('change', function() {
+                        currentRental = this.value;
+                        // Update the detail view rental input if it exists
+                        const detailRentalInput = document.getElementById('rentalInput');
+                        if (detailRentalInput) detailRentalInput.value = currentRental;
+                        
+                        calculateMetrics(currentPrice, currentRental, config, state, suburb, postcode, function(updatedMetrics) {
+                            metrics = updatedMetrics;
+                            if (config.sensitivity) {
+                                let configLow = { ...config, suburbGrowthRate: metrics.suburbGrowthRate - 0.02 };
+                                let configHigh = { ...config, suburbGrowthRate: metrics.suburbGrowthRate + 0.02 };
+                                calculateMetrics(currentPrice, currentRental, configLow, state, suburb, postcode, function(metricsLow) {
+                                    calculateMetrics(currentPrice, currentRental, configHigh, state, suburb, postcode, function(metricsHigh) {
+                                        irr10Low = metricsLow.irr10;
+                                        irr10High = metricsHigh.irr10;
+                                        updateDisplay();
+                                        updateTopBarMetrics();
+                                    });
+                                });
+                            } else {
+                                updateDisplay();
+                                updateTopBarMetrics();
+                            }
+                        });
+                    });
+                }
+            }, 0);
+            
+            // Function to update the top bar metrics
+            function updateTopBarMetrics() {
+                const worth = parseFloat(metrics.annualCashFlow) > 0 && parseFloat(metrics.irr10) > 8 && parseFloat(metrics.cashOnCashAfterTax) > 8;
+                const yieldElement = barDiv.querySelector('.metric:nth-child(3) .metric-value');
+                const growth = barDiv.querySelector('.metric:nth-child(4) .metric-value');
+                const cashFlow = barDiv.querySelector('.metric:nth-child(5) .metric-value');
+                const irr = barDiv.querySelector('.metric:nth-child(6) .metric-value');
+                const worthBuying = barDiv.querySelector('.metric:nth-child(7) .metric-value');
+                
+                if (yieldElement) yieldElement.textContent = metrics.rentalYield;
+                if (growth) growth.textContent = metrics.suburbGrowth.replace(' (Fetched from yourinvestmentpropertymag.com.au)', '');
+                
+                if (cashFlow) {
+                    cashFlow.textContent = `$${parseFloat(metrics.annualCashFlow).toLocaleString()}/yr`;
+                    if (parseFloat(metrics.annualCashFlow) > 0) {
+                        cashFlow.classList.add('positive');
+                        cashFlow.classList.remove('negative');
+                    } else {
+                        cashFlow.classList.add('negative');
+                        cashFlow.classList.remove('positive');
+                    }
+                }
+                
+                if (irr) {
+                    irr.textContent = metrics.irr10;
+                    if (parseFloat(metrics.irr10) > 8) {
+                        irr.classList.add('positive');
+                        irr.classList.remove('negative');
+                    } else {
+                        irr.classList.add('negative');
+                        irr.classList.remove('positive');
+                    }
+                }
+                
+                if (worthBuying) {
+                    worthBuying.textContent = worth ? 'Yes' : 'No';
+                    if (worth) {
+                        worthBuying.classList.add('positive');
+                        worthBuying.classList.remove('negative');
+                    } else {
+                        worthBuying.classList.add('negative');
+                        worthBuying.classList.remove('positive');
+                    }
+                }
+            }
+
             // Create the insights panel (dropdown)
             let infoDiv = document.createElement('div');
             infoDiv.className = 'hidden';
@@ -1017,6 +1249,73 @@
             let configDiv = document.createElement('div');
             configDiv.className = 'hidden mt-4 p-4 bg-gray-50 rounded-lg';
             
+            // Function to update suburb data display
+            function updateSuburbDataDisplay(element, data, suburb, state, postcode) {
+                if (data && Object.keys(data.medianPrices || {}).length > 0) {
+                    // Create a formatted display of median prices
+                    let priceRows = '';
+                    for (const [key, price] of Object.entries(data.medianPrices)) {
+                        if (price !== '-') {
+                            const [bedrooms, type] = key.split('-');
+                            priceRows += `<p class="text-sm"><span class="font-medium">${bedrooms} bed ${type}:</span> ${price}</p>`;
+                        }
+                    }
+                    
+                    // Calculate average days on market if available
+                    let avgDays = 'N/A';
+                    let daysCount = 0;
+                    let daysSum = 0;
+                    for (const [key, days] of Object.entries(data.avgDaysOnMarket || {})) {
+                        if (days !== '-') {
+                            const daysNum = parseInt(days);
+                            if (!isNaN(daysNum)) {
+                                daysSum += daysNum;
+                                daysCount++;
+                            }
+                        }
+                    }
+                    if (daysCount > 0) {
+                        avgDays = `${Math.round(daysSum / daysCount)} days`;
+                    }
+                    
+                    // Calculate total properties sold
+                    let totalSold = 0;
+                    for (const [key, sold] of Object.entries(data.soldThisYear || {})) {
+                        const soldNum = parseInt(sold);
+                        if (!isNaN(soldNum)) {
+                            totalSold += soldNum;
+                        }
+                    }
+
+                    element.innerHTML = `
+                        <div class="p-3 bg-gray-50 rounded-lg shadow text-sm mb-3">
+                            <h4 class="font-medium text-gray-800 mb-2 border-b pb-1">Suburb Insights: ${suburb}, ${state} ${postcode}</h4>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <h5 class="font-medium mb-1 text-gray-700">Median Prices</h5>
+                                    ${priceRows || '<p class="text-sm">No price data available</p>'}
+                                </div>
+                                <div>
+                                    <h5 class="font-medium mb-1 text-gray-700">Market Activity</h5>
+                                    <p class="text-sm"><span class="font-medium">Avg Days on Market:</span> ${avgDays}</p>
+                                    <p class="text-sm"><span class="font-medium">Properties Sold (12m):</span> ${totalSold}</p>
+                                    ${data.population ? `<p class="text-sm"><span class="font-medium">Population:</span> ${data.population}</p>` : ''}
+                                    ${data.medianAge ? `<p class="text-sm"><span class="font-medium">Median Age:</span> ${data.medianAge} years</p>` : ''}
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-2 italic">Data sourced from ${data.source}</p>
+                        </div>
+                    `;
+                } else {
+                    element.innerHTML = `
+                        <div class="p-3 bg-gray-50 rounded-lg shadow text-sm mb-3">
+                            <h4 class="font-medium text-gray-800 mb-2 border-b pb-1">Suburb Insights: ${suburb}, ${state} ${postcode}</h4>
+                            <p class="text-sm">No suburb data available. <a href="https://www.domain.com.au/suburb-profile/${suburb}-${state}-${postcode}" target="_blank" class="text-blue-600 underline">View on Domain</a></p>
+                        </div>
+                    `;
+                }
+            }
+            
             // Restore the complete data display logic here
             function updateDisplay() {
                 let worthBuying = parseFloat(metrics.annualCashFlow) > 0 && parseFloat(metrics.irr10) > 8 && parseFloat(metrics.cashOnCashAfterTax) > 8;
@@ -1025,15 +1324,51 @@
                 let irrColor = parseFloat(metrics.irr10) > 8 ? 'text-green-600' : 'text-red-600';
                 let cocColor = parseFloat(metrics.cashOnCashAfterTax) > 8 ? 'text-green-600' : 'text-red-600';
 
-                summaryDiv.innerHTML = `
-                    <div class="p-4">
-                        <button id="collapseMetricsBtn" class="w-full bg-blue-500 text-white py-2 rounded mb-4">Collapse Metrics</button>
-                        <h2 class="text-xl font-bold text-gray-800 mb-4">Property Insights</h2>
+                // Generate year-by-year table rows - completely rebuilt to avoid reserved words
+                let yearByYearRows = '';
+                if (metrics.yearByYearDetails && metrics.yearByYearDetails.length > 0) {
+                    for (let i = 0; i < Math.min(10, metrics.yearByYearDetails.length); i++) {
+                        const yearData = metrics.yearByYearDetails[i];
+                        const cashFlowClass = yearData.afterTaxCashFlow >= 0 ? 'text-green-600' : 'text-red-600';
+                        const cumulativeClass = yearData.cumulativeCashFlow >= 0 ? 'text-green-600' : 'text-red-600';
                         
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        const yearValue = yearData.year;
+                        const propValue = yearData.propertyValue.toLocaleString();
+                        const loanValue = yearData.loanAmount.toLocaleString();
+                        const lvrPct = yearData.lvrValue;
+                        const equityValue = yearData.equity.toLocaleString();
+                        const rentValue = yearData.rentAmount.toLocaleString();
+                        const cashValue = yearData.afterTaxCashFlow.toLocaleString();
+                        const cumulativeValue = yearData.cumulativeCashFlow.toLocaleString();
+                        
+                        yearByYearRows += '<tr class="border-b border-gray-200">';
+                        yearByYearRows += `<td class="p-2 text-center">${yearValue}</td>`;
+                        yearByYearRows += `<td class="p-2 text-right">$${propValue}</td>`;
+                        yearByYearRows += `<td class="p-2 text-right">$${loanValue}</td>`;
+                        yearByYearRows += `<td class="p-2 text-right">${lvrPct}%</td>`;
+                        yearByYearRows += `<td class="p-2 text-right">$${equityValue}</td>`;
+                        yearByYearRows += `<td class="p-2 text-right">$${rentValue}</td>`;
+                        yearByYearRows += `<td class="p-2 text-right ${cashFlowClass}">$${cashValue}</td>`;
+                        yearByYearRows += `<td class="p-2 text-right ${cumulativeClass}">$${cumulativeValue}</td>`;
+                        yearByYearRows += '</tr>';
+                    }
+                }
+
+                // Rebuild summaryDiv HTML with more conservative templating
+                let summaryHTML = `
+                    <div class="p-3">
+                        <div class="flex justify-between items-center mb-3">
+                            <h2 class="text-lg font-bold text-gray-800">Property Insights</h2>
+                            <button id="collapseMetricsBtn" class="bg-blue-500 text-white py-1 px-3 text-sm rounded">Collapse</button>
+                        </div>
+                        
+                        <!-- Suburb data container -->
+                        <div id="suburb-data-container" class="mb-4"></div>
+                        
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
                             <!-- Financial Overview Section -->
-                            <div class="p-4 bg-gray-50 rounded-lg shadow">
-                                <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Financial Overview</h4>
+                            <div class="p-3 bg-gray-50 rounded-lg shadow text-sm">
+                                <h4 class="font-medium mb-2">Financial Overview</h4>
                                 <p class="text-sm"><span class="font-medium">Price:</span> ${currentPrice}</p>
                                 <p class="text-sm"><span class="font-medium">Total Cost (incl. fees):</span> ${metrics.totalCost}</p>
                                 <p class="text-sm"><span class="font-medium">Rental Estimate:</span> ${currentRental}</p>
@@ -1042,14 +1377,14 @@
                                 <p class="text-sm"><span class="font-medium">After-Tax Cash Flow:</span> <span class="${cashFlowColor}">$${parseFloat(metrics.annualCashFlow).toLocaleString()}</span></p>
                                 <p class="text-sm"><span class="font-medium">Break-Even Year:</span> ${metrics.breakEvenYear}</p>
                                 <p class="text-sm"><span class="font-medium">Cumulative Profit/Loss (10 Yr):</span> $${metrics.cumulativeProfitLoss[9]?.toLocaleString()}</p>
-                                <div class="mt-4">
-                                    <canvas id="profitLossChart" style="height: 200px;"></canvas>
+                                <div class="mt-3">
+                                    <canvas id="profitLossChart" style="height: 150px;"></canvas>
                                 </div>
                             </div>
                             
                             <!-- Tax & Deductions Section -->
-                            <div class="p-4 bg-gray-50 rounded-lg shadow">
-                                <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Tax & Deductions</h4>
+                            <div class="p-3 bg-gray-50 rounded-lg shadow text-sm">
+                                <h4 class="font-medium mb-2">Tax & Deductions</h4>
                                 <p class="text-sm"><span class="font-medium">Tax Savings A:</span> $${parseFloat(metrics.taxSavingsA).toLocaleString()}</p>
                                 <p class="text-sm"><span class="font-medium">Tax Savings B:</span> $${parseFloat(metrics.taxSavingsB).toLocaleString()}</p>
                                 <p class="text-sm"><span class="font-medium">Annual Costs:</span> $${parseFloat(metrics.totalCosts).toLocaleString()}</p>
@@ -1058,22 +1393,22 @@
                             </div>
                             
                             <!-- Growth & Returns Section -->
-                            <div class="p-4 bg-gray-50 rounded-lg shadow">
-                                <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Growth & Returns</h4>
+                            <div class="p-3 bg-gray-50 rounded-lg shadow text-sm">
+                                <h4 class="font-medium mb-2">Growth & Returns</h4>
                                 <p class="text-sm"><span class="font-medium">Suburb Growth:</span> ${metrics.suburbGrowth}</p>
                                 <p class="text-sm"><span class="font-medium">3-Year IRR:</span> ${metrics.irr3}</p>
                                 <p class="text-sm"><span class="font-medium">5-Year IRR:</span> ${metrics.irr5}</p>
                                 <p class="text-sm"><span class="font-medium">10-Year IRR:</span> <span class="${irrColor}">${metrics.irr10}</span>${config.sensitivity ? ` (Range: ${irr10Low} to ${irr10High})` : ''}</p>
                                 <p class="text-sm"><span class="font-medium">Cash on Cash (Before Tax):</span> ${metrics.cashOnCashBeforeTax}</p>
                                 <p class="text-sm"><span class="font-medium">Cash on Cash (After Tax):</span> <span class="${cocColor}">${metrics.cashOnCashAfterTax}</span></p>
-                                <div class="mt-4">
-                                    <canvas id="futureValueChart" style="height: 200px;"></canvas>
+                                <div class="mt-3">
+                                    <canvas id="futureValueChart" style="height: 150px;"></canvas>
                                 </div>
                             </div>
                             
                             <!-- Future Estimates Section -->
-                            <div class="p-4 bg-gray-50 rounded-lg shadow">
-                                <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Future Estimates</h4>
+                            <div class="p-3 bg-gray-50 rounded-lg shadow text-sm">
+                                <h4 class="font-medium mb-2">Future Estimates</h4>
                                 <p class="text-sm"><span class="font-medium">Est. Price (3 Yr):</span> ${metrics.futurePrice3}</p>
                                 <p class="text-sm"><span class="font-medium">Est. Price (5 Yr):</span> ${metrics.futurePrice5}</p>
                                 <p class="text-sm"><span class="font-medium">Est. Price (10 Yr):</span> ${metrics.futurePrice10}</p>
@@ -1083,14 +1418,36 @@
                             </div>
                         </div>
                         
-                        <!-- Equity & Leverage Section -->
-                        <div class="mt-4 p-4 bg-gray-50 rounded-lg shadow">
-                            <h4 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-2">Equity & Leverage</h4>
-                            <p class="text-sm"><span class="font-medium">Equity:</span> ${metrics.equity}</p>
-                            <p class="text-sm"><span class="font-medium">LVR:</span> ${metrics.lvr}</p>
+                        <!-- Year-by-Year Analysis Section (Collapsible) -->
+                        <div class="mt-4">
+                            <div class="flex justify-between items-center mb-2">
+                                <h3 class="font-bold text-gray-800">Year-by-Year Analysis</h3>
+                                <button id="toggleYearByYearBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 py-1 px-3 text-xs rounded">
+                                    Show Details
+                                </button>
+                            </div>
+                            <div id="yearByYearContent" class="hidden">
+                                <div class="overflow-x-auto">
+                                    <table class="min-w-full text-sm">
+                                        <thead class="bg-gray-100">
+                                            <tr>
+                                                <th class="p-2 text-center">Year</th>
+                                                <th class="p-2 text-right">Property Value</th>
+                                                <th class="p-2 text-right">Loan Balance</th>
+                                                <th class="p-2 text-right">LVR</th>
+                                                <th class="p-2 text-right">Equity</th>
+                                                <th class="p-2 text-right">Annual Rent</th>
+                                                <th class="p-2 text-right">Cash Flow</th>
+                                                <th class="p-2 text-right">Cumulative</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${yearByYearRows}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
-                        
-                        <p class="mt-4 text-xs text-gray-500 italic">Note: Suburb growth fetched dynamically. Costs assume ${metrics.lvr} LVR, ${(metrics.interestRate * 100).toFixed(2)}% loan, ${(metrics.managementFee * 100).toFixed(2)}% management, $${metrics.strata.toLocaleString()} strata, etc.</p>
                         
                         <div class="mt-4 flex justify-between">
                             <div class="flex items-center space-x-2">
@@ -1113,8 +1470,34 @@
                         </div>
                     </div>
                 `;
+                
+                summaryDiv.innerHTML = summaryHTML;
 
+                // Update suburb data
+                const suburbDataContainer = summaryDiv.querySelector('#suburb-data-container');
+                if (suburbDataContainer) {
+                    updateSuburbDataDisplay(suburbDataContainer, suburbData, suburb, state, postcode);
+                }
+
+                // Add event listeners
                 setTimeout(() => {
+                    // Year-by-year toggle button
+                    const toggleYearByYearBtn = summaryDiv.querySelector('#toggleYearByYearBtn');
+                    const yearByYearContent = summaryDiv.querySelector('#yearByYearContent');
+                    
+                    if (toggleYearByYearBtn && yearByYearContent) {
+                        toggleYearByYearBtn.addEventListener('click', function() {
+                            if (yearByYearContent.classList.contains('hidden')) {
+                                yearByYearContent.classList.remove('hidden');
+                                this.textContent = 'Hide Details';
+                            } else {
+                                yearByYearContent.classList.add('hidden');
+                                this.textContent = 'Show Details';
+                            }
+                        });
+                    }
+                    
+                    // Charts
                     let futureValueCanvas = summaryDiv.querySelector('#futureValueChart');
                     if (futureValueCanvas) {
                         let ctx = futureValueCanvas.getContext('2d');
@@ -1126,19 +1509,24 @@
                                     label: 'Future Value ($)',
                                     data: metrics.futureValues,
                                     borderColor: '#007bff',
-                                    fill: false
+                                    fill: false,
+                                    pointRadius: 2,
+                                    borderWidth: 1.5
                                 }]
                             },
                             options: {
                                 responsive: true,
                                 maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { mode: 'index', intersect: false }
+                                },
                                 scales: {
                                     y: {
-                                        beginAtZero: false,
-                                        title: { display: true, text: 'Value ($)' }
+                                        ticks: { font: { size: 10 } }
                                     },
                                     x: {
-                                        title: { display: true, text: 'Year' }
+                                        ticks: { font: { size: 10 } }
                                     }
                                 }
                             }
@@ -1156,27 +1544,31 @@
                                     label: 'Cumulative Profit/Loss ($)',
                                     data: [0, ...metrics.cumulativeProfitLoss],
                                     borderColor: '#ff5733',
-                                    fill: false
+                                    fill: false,
+                                    pointRadius: 2,
+                                    borderWidth: 1.5
                                 }]
                             },
                             options: {
                                 responsive: true,
                                 maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { mode: 'index', intersect: false }
+                                },
                                 scales: {
                                     y: {
-                                        title: { display: true, text: 'Profit/Loss ($)' }
+                                        ticks: { font: { size: 10 } }
                                     },
                                     x: {
-                                        title: { display: true, text: 'Year' }
+                                        ticks: { font: { size: 10 } }
                                     }
                                 }
                             }
                         });
                     }
-                }, 0);
-                
-                // Add event listener for the collapse button
-                setTimeout(() => {
+                    
+                    // Add event listener for the collapse button
                     const collapseBtn = summaryDiv.querySelector('#collapseMetricsBtn');
                     if (collapseBtn) {
                         collapseBtn.addEventListener('click', function() {
@@ -1225,12 +1617,18 @@
                 }
             };
 
-            // Attach event listener for price/rental inputs
+            // Attach event listener for price/rental inputs in the detailed view
             infoDiv.addEventListener('input', function(e) {
                 if (e.target.id === 'priceInput') {
                     currentPrice = e.target.value;
+                    // Sync with top bar
+                    const topPriceInput = document.getElementById('topPriceInput');
+                    if (topPriceInput) topPriceInput.value = currentPrice;
                 } else if (e.target.id === 'rentalInput') {
                     currentRental = e.target.value;
+                    // Sync with top bar
+                    const topRentalInput = document.getElementById('topRentalInput');
+                    if (topRentalInput) topRentalInput.value = currentRental;
                 }
                 calculateMetrics(currentPrice, currentRental, config, state, suburb, postcode, function(updatedMetrics) {
                     metrics = updatedMetrics;
@@ -1242,10 +1640,12 @@
                                 irr10Low = metricsLow.irr10;
                                 irr10High = metricsHigh.irr10;
                                 updateDisplay();
+                                updateTopBarMetrics();
                             });
                         });
                     } else {
                         updateDisplay();
+                        updateTopBarMetrics();
                     }
                 });
             });
@@ -1271,6 +1671,181 @@
                     summaryDiv.classList.remove('hidden');
                 }
             };
+
+            // Set up the config panel with all the investment assumptions
+            configDiv.innerHTML = `
+                <div class="p-4">
+                    <h3 class="text-lg font-bold text-gray-800 mb-3">Investment Assumptions</h3>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <h4 class="font-medium text-gray-700 mb-2">Financing Assumptions</h4>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Loan to Value Ratio (%)</label>
+                                <input type="number" id="lvrRateInput" value="${config.lvrRate * 100}" min="0" max="100" step="1" class="w-full p-2 border rounded">
+                            </div>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Interest Rate (%)</label>
+                                <input type="number" id="interestRateInput" value="${config.interestRate * 100}" min="0" max="20" step="0.01" class="w-full p-2 border rounded">
+                            </div>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Construction Cost (% of Property Value)</label>
+                                <input type="number" id="constructionCostInput" value="${40}" min="0" max="100" step="1" class="w-full p-2 border rounded">
+                            </div>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Fittings Value ($)</label>
+                                <input type="number" id="fittingsValueInput" value="${config.fittingsValue}" min="0" step="1000" class="w-full p-2 border rounded">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4 class="font-medium text-gray-700 mb-2">Growth & Management Assumptions</h4>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Capital Growth Rate (%)</label>
+                                <input type="number" id="suburbGrowthRateInput" value="${metrics.suburbGrowthRate * 100}" min="0" max="25" step="0.01" class="w-full p-2 border rounded">
+                            </div>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Rental Growth Rate (%)</label>
+                                <input type="number" id="rentalGrowthRateInput" value="${config.rentalGrowthRate * 100}" min="0" max="25" step="0.01" class="w-full p-2 border rounded">
+                            </div>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Property Management Fee (%)</label>
+                                <input type="number" id="managementFeeInput" value="${config.managementFee * 100}" min="0" max="25" step="0.1" class="w-full p-2 border rounded">
+                            </div>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Vacancy Rate (%)</label>
+                                <input type="number" id="vacancyRateInput" value="${config.vacancyRate * 100}" min="0" max="25" step="0.1" class="w-full p-2 border rounded">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <h4 class="font-medium text-gray-700 mb-2">Annual Costs</h4>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Strata/Body Corp ($)</label>
+                                <input type="number" id="strataInput" value="${metrics.strata}" min="0" step="100" class="w-full p-2 border rounded">
+                            </div>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Council Rates ($)</label>
+                                <input type="number" id="councilRatesInput" value="1200" min="0" step="100" class="w-full p-2 border rounded">
+                            </div>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Insurance ($)</label>
+                                <input type="number" id="insuranceInput" value="1500" min="0" step="100" class="w-full p-2 border rounded">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <h4 class="font-medium text-gray-700 mb-2">Income & Tax</h4>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Income Person A ($)</label>
+                                <input type="number" id="incomeAInput" value="${config.incomeA}" min="0" step="1000" class="w-full p-2 border rounded">
+                            </div>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Income Person B ($)</label>
+                                <input type="number" id="incomeBInput" value="${config.incomeB}" min="0" step="1000" class="w-full p-2 border rounded">
+                            </div>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Allocation Person A (%)</label>
+                                <input type="number" id="allocationAInput" value="${config.allocationA * 100}" min="0" max="100" step="1" class="w-full p-2 border rounded">
+                            </div>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Allocation Person B (%)</label>
+                                <input type="number" id="allocationBInput" value="${config.allocationB * 100}" min="0" max="100" step="1" class="w-full p-2 border rounded">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4 flex justify-end">
+                        <button id="applyConfigBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                            Apply Changes
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // Add event listener for the Apply button in config panel
+            setTimeout(() => {
+                const applyConfigBtn = configDiv.querySelector('#applyConfigBtn');
+                if (applyConfigBtn) {
+                    applyConfigBtn.addEventListener('click', function() {
+                        // Get all input values
+                        const lvrRate = parseFloat(configDiv.querySelector('#lvrRateInput').value) / 100;
+                        const interestRate = parseFloat(configDiv.querySelector('#interestRateInput').value) / 100;
+                        const constructionCostPercent = parseFloat(configDiv.querySelector('#constructionCostInput').value) / 100;
+                        const fittingsValue = parseFloat(configDiv.querySelector('#fittingsValueInput').value);
+                        const suburbGrowthRate = parseFloat(configDiv.querySelector('#suburbGrowthRateInput').value) / 100;
+                        const rentalGrowthRate = parseFloat(configDiv.querySelector('#rentalGrowthRateInput').value) / 100;
+                        const managementFee = parseFloat(configDiv.querySelector('#managementFeeInput').value) / 100;
+                        const vacancyRate = parseFloat(configDiv.querySelector('#vacancyRateInput').value) / 100;
+                        const strata = parseFloat(configDiv.querySelector('#strataInput').value);
+                        const councilRates = parseFloat(configDiv.querySelector('#councilRatesInput').value);
+                        const insurance = parseFloat(configDiv.querySelector('#insuranceInput').value);
+                        const incomeA = parseFloat(configDiv.querySelector('#incomeAInput').value);
+                        const incomeB = parseFloat(configDiv.querySelector('#incomeBInput').value);
+                        const allocationA = parseFloat(configDiv.querySelector('#allocationAInput').value) / 100;
+                        const allocationB = parseFloat(configDiv.querySelector('#allocationBInput').value) / 100;
+                        
+                        // Update config with new values
+                        const priceValue = parseFloat(currentPrice.replace(/[^\d.-]/g, ''));
+                        config.lvrRate = lvrRate;
+                        config.interestRate = interestRate;
+                        config.constructionCost = priceValue * constructionCostPercent;
+                        config.fittingsValue = fittingsValue;
+                        config.suburbGrowthRate = suburbGrowthRate;
+                        config.rentalGrowthRate = rentalGrowthRate;
+                        config.managementFee = managementFee;
+                        config.vacancyRate = vacancyRate;
+                        config.strata = strata;
+                        config.councilRates = councilRates;
+                        config.insurance = insurance;
+                        config.incomeA = incomeA;
+                        config.incomeB = incomeB;
+                        config.allocationA = allocationA;
+                        config.allocationB = allocationB;
+                        
+                        // Save to GM_setValue for persistence
+                        GM_setValue('lvrRate', lvrRate);
+                        GM_setValue('interestRate', interestRate);
+                        GM_setValue('constructionCost', config.constructionCost);
+                        GM_setValue('fittingsValue', fittingsValue);
+                        GM_setValue('rentalGrowthRate', rentalGrowthRate);
+                        GM_setValue('managementFee', managementFee);
+                        GM_setValue('vacancyRate', vacancyRate);
+                        GM_setValue('incomeA', incomeA);
+                        GM_setValue('incomeB', incomeB);
+                        GM_setValue('allocationA', allocationA);
+                        GM_setValue('allocationB', allocationB);
+                        
+                        // Recalculate metrics with new config
+                        calculateMetrics(currentPrice, currentRental, config, state, suburb, postcode, function(updatedMetrics) {
+                            metrics = updatedMetrics;
+                            updateDisplay();
+                            updateTopBarMetrics();
+                            
+                            // Show the summary view
+                            configDiv.classList.add('hidden');
+                            summaryDiv.classList.remove('hidden');
+                            
+                            // Add a notification
+                            const notification = document.createElement('div');
+                            notification.className = 'fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg';
+                            notification.textContent = 'Investment assumptions updated!';
+                            document.body.appendChild(notification);
+                            
+                            // Remove notification after 3 seconds
+                            setTimeout(() => {
+                                if (notification.parentNode) {
+                                    notification.parentNode.removeChild(notification);
+                                }
+                            }, 3000);
+                        });
+                    });
+                }
+            }, 0);
 
             infoDiv.appendChild(summaryDiv);
             infoDiv.appendChild(detailsDiv);
